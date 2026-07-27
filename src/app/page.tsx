@@ -99,8 +99,8 @@ export default function LoginPage() {
         throw new Error(data.error || "Failed to send OTP");
       }
 
-      if (data.useFirebase) {
-        setProvider("firebase");
+      if (data.usefast2sms) {
+        setProvider("fast2sms");
         const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
         const result = await signInWithPhoneNumber(
           auth,

@@ -1,195 +1,131 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { auth } from "@/lib/firebase";
+import {
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  ConfirmationResult,
+} from "firebase/auth";
 
-type Step = "phone" | "otp" | "success";
-
-export default function Home() {
-  const [step, setStep] = useState<Step>("phone");
-  const [phoneNumber, setPhoneNumber] = useState("");
+export default function LoginPage() {
+  const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [timer, setTimer] = useState(0);
+  const [step, setStep] = useState(1);
+  const [message, setMessage] = useState("");
+  const [confirmationResult, setConfirmationResult] =
+    useState<ConfirmationResult | null>(null);
 
   useEffect(() => {
-    if (timer > 0) {
-      const interval = setInterval(() => setTimer(timer - 1), 1000);
-      return () => clearInterval(interval);
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        auth,
+        "recaptcha-container",
+        {
+          size: "invisible",
+        }
+      );
     }
-  }, [timer]);
+  }, []);
 
-  const sendOTP = async () => {
-    if (!phoneNumber || phoneNumber.length < 10) {
-      setError("Please enter a valid 10-digit mobile number");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
+  const requestOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage("");
 
     try {
-      const response = await fetch("/api/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber }),
-      });
+      const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
+      const appVerifier = window.recaptchaVerifier;
 
-      const data = await response.json();
-
-      if (data.success) {
-        setStep("otp");
-        setTimer(60);
-      } else {
-        setError(data.message || "Failed to send OTP");
-      }
-    } catch {
-      setError("Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
+      const result = await signInWithPhoneNumber(
+        auth,
+        formattedPhone,
+        appVerifier
+      );
+      setConfirmationResult(result);
+      setStep(2);
+      setMessage("OTP sent successfully!");
+    } catch (error: any) {
+      console.error(error);
+      setMessage(error.message || "Failed to send OTP.");
     }
   };
 
-  const verifyOTP = async () => {
-    if (!otp || otp.length !== 6) {
-      setError("Please enter a valid 6-digit OTP");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
+  const verifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage("");
 
     try {
-      const response = await fetch("/api/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber, otp }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setStep("success");
-      } else {
-        setError(data.message || "Invalid OTP");
+      if (confirmationResult) {
+        await confirmationResult.confirm(otp);
+        setStep(3);
+        setMessage("You have logged in successfully!");
       }
     } catch {
-      setError("Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
+      setMessage("Invalid OTP. Try again.");
     }
-  };
-
-  const resendOTP = () => {
-    setOtp("");
-    setError("");
-    sendOTP();
   };
 
   return (
-    <div className="login-container">
-      {step === "phone" && (
-        <>
-          <h1>Login</h1>
-          <p className="subtitle">Enter your mobile number to receive OTP</p>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm text-center">
+        <h2 className="text-2xl font-bold mb-6 text-gray-800">
+          Internship Login
+        </h2>
 
-          <div className="form-group">
-            <label>Mobile Number</label>
-            <div className="phone-input">
-              <input
-                type="text"
-                className="country-code"
-                value="+91"
-                readOnly
-              />
-              <input
-                type="tel"
-                className="phone-number"
-                placeholder="Enter 10-digit number"
-                value={phoneNumber}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/\D/g, "").slice(0, 10);
-                  setPhoneNumber(value);
-                  setError("");
-                }}
-                maxLength={10}
-              />
-            </div>
-          </div>
-
-          <button
-            className="send-otp-btn"
-            onClick={sendOTP}
-            disabled={loading || phoneNumber.length < 10}
-          >
-            {loading ? "Sending OTP..." : "Send OTP"}
-          </button>
-
-          {error && <p className="error-message">{error}</p>}
-        </>
-      )}
-
-      {step === "otp" && (
-        <>
-          <h1>Verify OTP</h1>
-          <p className="subtitle">
-            OTP sent to +91 {phoneNumber}
-          </p>
-
-          <div className="form-group">
-            <label>Enter 6-digit OTP</label>
+        {step === 1 && (
+          <form onSubmit={requestOTP}>
             <input
-              type="tel"
-              className="otp-input"
-              placeholder="------"
-              value={otp}
-              onChange={(e) => {
-                const value = e.target.value.replace(/\D/g, "").slice(0, 6);
-                setOtp(value);
-                setError("");
-              }}
-              maxLength={6}
+              type="text"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Mobile Number (+919876543210)"
+              className="w-full p-3 mb-4 border border-gray-300 rounded text-black"
+              required
             />
-          </div>
-
-          <button
-            className="verify-btn"
-            onClick={verifyOTP}
-            disabled={loading || otp.length < 6}
-          >
-            {loading ? "Verifying..." : "Verify OTP"}
-          </button>
-
-          {timer > 0 ? (
-            <p className="timer">Resend OTP in {timer}s</p>
-          ) : (
-            <button className="resend-btn" onClick={resendOTP}>
-              Resend OTP
+            <button
+              type="submit"
+              className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 transition"
+            >
+              Send OTP
             </button>
-          )}
+          </form>
+        )}
 
-          <button
-            className="back-btn"
-            onClick={() => {
-              setStep("phone");
-              setOtp("");
-              setError("");
-            }}
-          >
-            Change Number
-          </button>
+        {step === 2 && (
+          <form onSubmit={verifyOTP}>
+            <input
+              type="text"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              placeholder="Enter 6-digit OTP"
+              className="w-full p-3 mb-4 border border-gray-300 rounded text-black"
+              required
+            />
+            <button
+              type="submit"
+              className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 transition"
+            >
+              Verify OTP
+            </button>
+          </form>
+        )}
 
-          {error && <p className="error-message">{error}</p>}
-        </>
-      )}
+        {step === 3 && (
+          <div className="text-green-600 font-bold text-lg mt-4">{message}</div>
+        )}
 
-      {step === "success" && (
-        <div className="success-message">
-          <div className="success-icon">&#10003;</div>
-          <h2>Login Successful!</h2>
-          <p>Welcome! You have logged in successfully.</p>
-        </div>
-      )}
+        <div id="recaptcha-container"></div>
+
+        {step !== 3 && message && (
+          <p className="mt-4 text-sm font-medium text-red-500">{message}</p>
+        )}
+      </div>
     </div>
   );
+}
+
+declare global {
+  interface Window {
+    recaptchaVerifier: any;
+  }
 }

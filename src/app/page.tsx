@@ -83,45 +83,48 @@ export default function LoginPage() {
   };
 
   const requestOTP = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMessage("");
-    setLoading(true);
+  e.preventDefault();
+  setMessage("");
+  setLoading(true);
 
-    try {
-      const response = await fetch("/api/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
-      });
-      const data = await response.json();
+  try {
+    const response = await fetch("/api/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+    });
+    
+    const data = await response.json();
 
-      if (!data.success) {
-        throw new Error(data.error || "Failed to send OTP");
-      }
-
-      if (data.usefast2sms) {
-        setProvider("fast2sms");
-        const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
-        const result = await signInWithPhoneNumber(
-          auth,
-          formattedPhone,
-          window.recaptchaVerifier
-        );
-        setConfirmationResult(result);
-      } else {
-        setProvider(data.message?.split("via ")[1]?.toLowerCase() || "sms");
-      }
-
-      setStep(2);
-      setTimer(60);
-    } catch (err: any) {
-      console.error(err);
-      setMessage(err.message || "Failed to send OTP. Please try again.");
-      setError(true);
-    } finally {
-      setLoading(false);
+    if (!data.success) {
+      throw new Error(data.error || "Failed to send OTP");
     }
-  };
+
+    // ONLY trigger Firebase client SDK if specifically using native Firebase SMS
+    if (data.useFirebase) {
+      setProvider("firebase");
+      const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
+      const result = await signInWithPhoneNumber(
+        auth,
+        formattedPhone,
+        window.recaptchaVerifier
+      );
+      setConfirmationResult(result);
+    } else {
+      // For Fast2SMS, Twilio, etc., /api/send-otp ALREADY sent the text!
+      setProvider(data.message?.split("via ")[1]?.toLowerCase() || "sms");
+    }
+
+    setStep(2);
+    setTimer(60);
+  } catch (err: any) {
+    console.error(err);
+    setMessage(err.message || "Failed to send OTP. Please try again.");
+    setError(true);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const verifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();

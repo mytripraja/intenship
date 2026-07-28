@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 declare global {
-  var otpStore: Record<string, { otp: string; expiry: number }>;
+  var otpStore: Record<string, { otp: string; expiry: number } | string>;
 }
 
 global.otpStore = global.otpStore || {};
@@ -23,12 +23,14 @@ export async function POST(req: Request) {
     }
 
     const otp = generateOTP();
-    global.otpStore[cleanPhone] = {
-      otp,
-      expiry: Date.now() + 5 * 60 * 1000,
-    };
-
     const provider = process.env.ACTIVE_SMS_PROVIDER || "firebase";
+
+    if (provider !== "messagecentral") {
+      global.otpStore[cleanPhone] = {
+        otp,
+        expiry: Date.now() + 5 * 60 * 1000,
+      };
+    }
 
     switch (provider) {
       case "fast2sms": {
@@ -113,6 +115,39 @@ export async function POST(req: Request) {
         break;
       }
 
+      case "messagecentral": {
+        const mcCustomerId = process.env.MC_CUSTOMER_ID;
+        const mcPassword = process.env.MC_PASSWORD;
+        if (!mcCustomerId || !mcPassword)
+          throw new Error("Message Central credentials not set");
+
+        const mcPasswordBase64 = Buffer.from(mcPassword).toString("base64");
+
+        const tokenRes = await fetch(
+          `https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=${mcCustomerId}&key=${mcPasswordBase64}&scope=NEW&country=91`
+        );
+        const tokenData = await tokenRes.json();
+
+        if (!tokenData.token)
+          throw new Error("Message Central Authentication Failed");
+
+        const mcSendRes = await fetch(
+          `https://cpaas.messagecentral.com/verification/v3/send?countryCode=91&flowType=SMS&mobileNumber=${cleanPhone}`,
+          {
+            method: "POST",
+            headers: { authToken: tokenData.token },
+          }
+        );
+
+        const mcSendData = await mcSendRes.json();
+        if (mcSendRes.status !== 200 || !mcSendData.data?.verificationId) {
+          throw new Error("Message Central OTP Send Failed");
+        }
+
+        global.otpStore[cleanPhone] = mcSendData.data.verificationId;
+        break;
+      }
+
       case "firebase":
       default:
         break;
@@ -131,10 +166,11 @@ export async function POST(req: Request) {
       message: `OTP sent via ${provider.toUpperCase()}`,
       useFirebase: false,
     });
-  } catch (error: any) {
-    console.error(`[send-otp] Error:`, error.message);
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error("[send-otp] Error:", err.message);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to send OTP" },
+      { success: false, error: err.message || "Failed to send OTP" },
       { status: 500 }
     );
   }

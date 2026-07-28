@@ -24,44 +24,85 @@ export async function POST(req: Request) {
       );
     }
 
-    const stored = global.otpStore[cleanPhone];
+    let isValid = false;
 
-    if (Date.now() > stored.expiry) {
-      delete global.otpStore[cleanPhone];
+    if (provider === "messagecentral") {
+      const verificationId = global.otpStore[cleanPhone] as string;
+      if (!verificationId) {
+        return NextResponse.json(
+          { success: false, error: "No pending OTP found for this number" },
+          { status: 400 }
+        );
+      }
+
+      const mcCustomerId = process.env.MC_CUSTOMER_ID;
+      const mcPassword = process.env.MC_PASSWORD;
+      if (!mcCustomerId || !mcPassword)
+        throw new Error("Message Central credentials not set");
+
+      const mcPasswordBase64 = Buffer.from(mcPassword).toString("base64");
+
+      const tokenRes = await fetch(
+        `https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=${mcCustomerId}&key=${mcPasswordBase64}&scope=NEW&country=91`
+      );
+      const tokenData = await tokenRes.json();
+
+      const mcVerifyRes = await fetch(
+        `https://cpaas.messagecentral.com/verification/v3/validateOtp?countryCode=91&mobileNumber=${cleanPhone}&verificationId=${verificationId}&customerId=${mcCustomerId}&code=${otp}`,
+        {
+          method: "GET",
+          headers: { authToken: tokenData.token },
+        }
+      );
+
+      const mcVerifyData = await mcVerifyRes.json();
+
+      if (mcVerifyRes.status === 200 && mcVerifyData.status === 200) {
+        isValid = true;
+        delete global.otpStore[cleanPhone];
+      }
+    } else {
+      const stored = global.otpStore[cleanPhone] as { otp: string; expiry: number };
+
+      if (Date.now() > stored.expiry) {
+        delete global.otpStore[cleanPhone];
+        return NextResponse.json(
+          { success: false, error: "OTP has expired" },
+          { status: 400 }
+        );
+      }
+
+      if (stored.otp === otp) {
+        isValid = true;
+        delete global.otpStore[cleanPhone];
+      }
+    }
+
+    if (isValid) {
+      let customToken: string | null = null;
+      try {
+        const { adminAuth } = await import("@/lib/firebase-admin");
+        customToken = await adminAuth.createCustomToken(`+91${cleanPhone}`);
+      } catch {
+        customToken = null;
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "OTP verified successfully",
+        firebaseToken: customToken,
+      });
+    } else {
       return NextResponse.json(
-        { success: false, error: "OTP has expired" },
+        { success: false, error: "Invalid or expired OTP" },
         { status: 400 }
       );
     }
-
-    if (stored.otp !== otp) {
-      return NextResponse.json(
-        { success: false, error: "Invalid OTP" },
-        { status: 400 }
-      );
-    }
-
-    delete global.otpStore[cleanPhone];
-
-    const uid = `+91${cleanPhone}`;
-    let customToken: string | null = null;
-
-    try {
-      const { adminAuth } = await import("@/lib/firebase-admin");
-      customToken = await adminAuth.createCustomToken(uid);
-    } catch {
-      customToken = null;
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: "OTP verified successfully",
-      firebaseToken: customToken,
-    });
-  } catch (error: any) {
-    console.error(`[verify-otp] Error:`, error.message);
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error("[verify-otp] Error:", err.message);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to verify OTP" },
+      { success: false, error: err.message || "Failed to verify OTP" },
       { status: 500 }
     );
   }

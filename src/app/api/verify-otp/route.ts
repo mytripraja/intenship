@@ -6,7 +6,8 @@ if (!(global as any).otpStore) {
 
 export async function POST(request: Request) {
   try {
-    const { phone, otp } = await request.json();
+    const { phone, otp, verificationId: clientVerificationId } =
+      await request.json();
 
     if (!phone || !otp) {
       return NextResponse.json(
@@ -22,7 +23,8 @@ export async function POST(request: Request) {
       case "messagecentral": {
         const mcCustomerId = process.env.MC_CUSTOMER_ID;
         const mcPassword = process.env.MC_PASSWORD;
-        const verificationId = (global as any).otpStore[cleanPhone];
+        const verificationId =
+          clientVerificationId || (global as any).otpStore[cleanPhone];
 
         if (!verificationId) {
           return NextResponse.json(

@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [timer, setTimer] = useState(0);
+  const [verificationId, setVerificationId] = useState("");
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -91,6 +92,10 @@ export default function LoginPage() {
         throw new Error(data.error || "Failed to send OTP");
       }
 
+      if (data.verificationId) {
+        setVerificationId(data.verificationId);
+      }
+
       setStep(2);
       setTimer(60);
     } catch (err: any) {
@@ -113,7 +118,7 @@ export default function LoginPage() {
       const response = await fetch("/api/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, otp: otpString }),
+        body: JSON.stringify({ phone, otp: otpString, verificationId }),
       });
       const data = await response.json();
 
@@ -147,6 +152,10 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (!data.success) throw new Error(data.error);
+
+      if (data.verificationId) {
+        setVerificationId(data.verificationId);
+      }
 
       setTimer(60);
     } catch (err: any) {

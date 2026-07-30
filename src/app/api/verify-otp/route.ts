@@ -18,14 +18,6 @@ export async function POST(request: Request) {
     const cleanPhone = phone.replace(/\D/g, "").slice(-10);
     const provider = process.env.ACTIVE_SMS_PROVIDER || "mock";
 
-    if (provider === "firebase") {
-      return NextResponse.json({
-        success: true,
-        message: "Firebase handles verification on client side",
-        firebaseRequired: true,
-      });
-    }
-
     const stored = (global as any).otpStore[cleanPhone];
     if (!stored) {
       return NextResponse.json(
@@ -42,21 +34,17 @@ export async function POST(request: Request) {
       const mcPassword = process.env.MC_PASSWORD;
 
       if (!mcCustomerId || !mcPassword) {
-        throw new Error("Message Central credentials are missing.");
+        throw new Error("Message Central credentials missing in Vercel");
       }
 
-      const tokenUrl = `https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=${mcCustomerId}&key=${mcPassword}&scope=NEW&country=91`;
-      const tokenRes = await fetch(tokenUrl, {
-        method: "GET",
-        headers: { accept: "*/*" },
-      });
-
+      const tokenRes = await fetch(
+        `https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=${mcCustomerId}&key=${mcPassword}&scope=NEW&country=91`,
+        { method: "GET", headers: { accept: "*/*" } }
+      );
       const tokenData = await tokenRes.json();
 
       if (!tokenData.token) {
-        throw new Error(
-          `Token generation failed: ${JSON.stringify(tokenData)}`
-        );
+        throw new Error(`Token failed: ${JSON.stringify(tokenData)}`);
       }
 
       const mcVerifyRes = await fetch(
@@ -102,12 +90,12 @@ export async function POST(request: Request) {
         message: "OTP verified successfully",
         firebaseToken: customToken,
       });
-    } else {
-      return NextResponse.json(
-        { success: false, error: "Invalid OTP. Please try again." },
-        { status: 400 }
-      );
     }
+
+    return NextResponse.json(
+      { success: false, error: "Invalid OTP. Please try again." },
+      { status: 400 }
+    );
   } catch (error: any) {
     console.error("[verify-otp Error]:", error.message || error);
     return NextResponse.json(

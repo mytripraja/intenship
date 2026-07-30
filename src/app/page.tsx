@@ -2,32 +2,19 @@
 
 import { useState, useEffect, useRef } from "react";
 import { auth } from "@/lib/firebase";
-import {
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
-  ConfirmationResult,
-  getAuth,
-  signInWithCustomToken,
-} from "firebase/auth";
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
 export default function LoginPage() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [step, setStep] = useState(1);
   const [message, setMessage] = useState("");
-  const [confirmationResult, setConfirmationResult] =
-    useState<ConfirmationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [timer, setTimer] = useState(0);
-  const [provider, setProvider] = useState("firebase");
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
-    fetch("/api/send-otp", { method: "OPTIONS" })
-      .then(() => {})
-      .catch(() => {});
-
     if (!window.recaptchaVerifier) {
       window.recaptchaVerifier = new RecaptchaVerifier(
         auth,
@@ -73,7 +60,10 @@ export default function LoginPage() {
 
   const handleOtpPaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    const pasted = e.clipboardData
+      .getData("text")
+      .replace(/\D/g, "")
+      .slice(0, 6);
     const newOtp = [...otp];
     pasted.split("").forEach((char, i) => {
       if (i < 6) newOtp[i] = char;
@@ -83,47 +73,33 @@ export default function LoginPage() {
   };
 
   const requestOTP = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setMessage("");
-  setLoading(true);
+    e.preventDefault();
+    setMessage("");
+    setLoading(true);
 
-  try {
-    const response = await fetch("/api/send-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
-    });
-    
-    const data = await response.json();
+    try {
+      const response = await fetch("/api/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      });
 
-    if (!data.success) {
-      throw new Error(data.error || "Failed to send OTP");
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || "Failed to send OTP");
+      }
+
+      setStep(2);
+      setTimer(60);
+    } catch (err: any) {
+      console.error(err);
+      setMessage(err.message || "Failed to send OTP. Please try again.");
+      setError(true);
+    } finally {
+      setLoading(false);
     }
-
-    // ONLY trigger Firebase client SDK if specifically using native Firebase SMS
-    if (data.useFirebase) {
-      setProvider("firebase");
-      const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
-      const result = await signInWithPhoneNumber(
-        auth,
-        formattedPhone,
-        window.recaptchaVerifier
-      );
-      setConfirmationResult(result);
-    } else {
-      setProvider(provider);
-    }
-
-    setStep(2);
-    setTimer(60);
-  } catch (err: any) {
-    console.error(err);
-    setMessage(err.message || "Failed to send OTP. Please try again.");
-    setError(true);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const verifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,12 +108,6 @@ export default function LoginPage() {
 
     try {
       const otpString = otp.join("");
-
-      if (provider === "firebase" && confirmationResult) {
-        await confirmationResult.confirm(otpString);
-        setStep(3);
-        return;
-      }
 
       const response = await fetch("/api/verify-otp", {
         method: "POST",
@@ -148,11 +118,6 @@ export default function LoginPage() {
 
       if (!data.success) {
         throw new Error(data.error || "Invalid OTP");
-      }
-
-      if (data.firebaseToken) {
-        const clientAuth = getAuth();
-        await signInWithCustomToken(clientAuth, data.firebaseToken);
       }
 
       setStep(3);
@@ -181,16 +146,6 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (!data.success) throw new Error(data.error);
-
-      if (data.useFirebase) {
-        const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
-        const result = await signInWithPhoneNumber(
-          auth,
-          formattedPhone,
-          window.recaptchaVerifier
-        );
-        setConfirmationResult(result);
-      }
 
       setTimer(60);
     } catch (err: any) {

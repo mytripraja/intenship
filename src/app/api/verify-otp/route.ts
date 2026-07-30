@@ -1,25 +1,35 @@
 import { NextResponse } from "next/server";
 
-export async function POST(req: Request) {
-  try {
-    const { phone, otp, firebaseToken } = await req.json();
-    const provider = process.env.ACTIVE_SMS_PROVIDER || "firebase";
+if (!(global as any).otpStore) {
+  (global as any).otpStore = {};
+}
 
-    if (provider === "firebase") {
-      if (firebaseToken) {
-        return NextResponse.json({ success: true, firebaseToken });
-      }
+export async function POST(request: Request) {
+  try {
+    const { phone, otp } = await request.json();
+
+    if (!phone || !otp) {
       return NextResponse.json(
-        { success: false, error: "No Firebase token provided" },
+        { success: false, error: "Phone number and OTP are required" },
         { status: 400 }
       );
     }
 
-    const cleanPhone = phone.replace("+91", "").replace(/\D/g, "").trim();
+    const cleanPhone = phone.replace(/\D/g, "").slice(-10);
+    const provider = process.env.ACTIVE_SMS_PROVIDER || "mock";
 
-    if (!global.otpStore || !global.otpStore[cleanPhone]) {
+    if (provider === "firebase") {
+      return NextResponse.json({
+        success: true,
+        message: "Firebase handles verification on client side",
+        firebaseRequired: true,
+      });
+    }
+
+    const stored = (global as any).otpStore[cleanPhone];
+    if (!stored) {
       return NextResponse.json(
-        { success: false, error: "OTP expired or not found" },
+        { success: false, error: "OTP expired or not found. Request a new one." },
         { status: 400 }
       );
     }
@@ -27,23 +37,20 @@ export async function POST(req: Request) {
     let isValid = false;
 
     if (provider === "messagecentral") {
-      const verificationId = global.otpStore[cleanPhone] as string;
-      if (!verificationId) {
-        return NextResponse.json(
-          { success: false, error: "No pending OTP found for this number" },
-          { status: 400 }
-        );
-      }
-
+      const verificationId = stored;
       const mcCustomerId = process.env.MC_CUSTOMER_ID;
       const mcPassword = process.env.MC_PASSWORD;
-      if (!mcCustomerId || !mcPassword)
-        throw new Error("Message Central credentials not set");
 
-      const tokenRes = await fetch(
-        `https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=${mcCustomerId}&key=${mcPassword}&scope=NEW&country=91`,
-        { method: "GET", headers: { accept: "*/*" } }
-      );
+      if (!mcCustomerId || !mcPassword) {
+        throw new Error("Message Central credentials are missing.");
+      }
+
+      const tokenUrl = `https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=${mcCustomerId}&key=${mcPassword}&scope=NEW&country=91`;
+      const tokenRes = await fetch(tokenUrl, {
+        method: "GET",
+        headers: { accept: "*/*" },
+      });
+
       const tokenData = await tokenRes.json();
 
       if (!tokenData.token) {
@@ -64,13 +71,11 @@ export async function POST(req: Request) {
 
       if (mcVerifyRes.status === 200 && mcVerifyData.status === 200) {
         isValid = true;
-        delete global.otpStore[cleanPhone];
+        delete (global as any).otpStore[cleanPhone];
       }
     } else {
-      const stored = global.otpStore[cleanPhone] as { otp: string; expiry: number };
-
       if (Date.now() > stored.expiry) {
-        delete global.otpStore[cleanPhone];
+        delete (global as any).otpStore[cleanPhone];
         return NextResponse.json(
           { success: false, error: "OTP has expired" },
           { status: 400 }
@@ -79,7 +84,7 @@ export async function POST(req: Request) {
 
       if (stored.otp === otp) {
         isValid = true;
-        delete global.otpStore[cleanPhone];
+        delete (global as any).otpStore[cleanPhone];
       }
     }
 
@@ -99,15 +104,14 @@ export async function POST(req: Request) {
       });
     } else {
       return NextResponse.json(
-        { success: false, error: "Invalid or expired OTP" },
+        { success: false, error: "Invalid OTP. Please try again." },
         { status: 400 }
       );
     }
-  } catch (error: unknown) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    console.error("[verify-otp] Error:", err.message);
+  } catch (error: any) {
+    console.error("[verify-otp Error]:", error.message || error);
     return NextResponse.json(
-      { success: false, error: err.message || "Failed to verify OTP" },
+      { success: false, error: error.message || "Failed to verify OTP" },
       { status: 500 }
     );
   }

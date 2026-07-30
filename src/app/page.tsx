@@ -111,8 +111,7 @@ export default function LoginPage() {
       );
       setConfirmationResult(result);
     } else {
-      // For Fast2SMS, Twilio, etc., /api/send-otp ALREADY sent the text!
-      setProvider(data.message?.split("via ")[1]?.toLowerCase() || "sms");
+      setProvider(provider);
     }
 
     setStep(2);

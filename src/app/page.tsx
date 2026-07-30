@@ -6,7 +6,8 @@ import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
 export default function LoginPage() {
   const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [otp, setOtp] = useState(["", "", "", ""]);
+  const OTP_LENGTH = 4;
   const [step, setStep] = useState(1);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -44,7 +45,7 @@ export default function LoginPage() {
     newOtp[index] = value;
     setOtp(newOtp);
     setError(false);
-    if (value && index < 5) {
+    if (value && index < OTP_LENGTH - 1) {
       otpRefs.current[index + 1]?.focus();
     }
   };
@@ -63,13 +64,13 @@ export default function LoginPage() {
     const pasted = e.clipboardData
       .getData("text")
       .replace(/\D/g, "")
-      .slice(0, 6);
+      .slice(0, OTP_LENGTH);
     const newOtp = [...otp];
     pasted.split("").forEach((char, i) => {
-      if (i < 6) newOtp[i] = char;
+      if (i < OTP_LENGTH) newOtp[i] = char;
     });
     setOtp(newOtp);
-    otpRefs.current[Math.min(pasted.length, 5)]?.focus();
+    otpRefs.current[Math.min(pasted.length, OTP_LENGTH - 1)]?.focus();
   };
 
   const requestOTP = async (e: React.FormEvent) => {
@@ -124,7 +125,7 @@ export default function LoginPage() {
     } catch (err: any) {
       setMessage(err.message || "Invalid OTP. Please try again.");
       setError(true);
-      setOtp(["", "", "", "", "", ""]);
+      setOtp(["", "", "", ""]);
       otpRefs.current[0]?.focus();
     } finally {
       setLoading(false);
@@ -300,7 +301,7 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={loading || otp.some((d) => !d)}
+                disabled={loading || otp.some((d) => !d) || otp.length !== OTP_LENGTH}
                 className="btn btn-verify"
               >
                 <span className="btn-content">
@@ -335,7 +336,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => {
                   setStep(1);
-                  setOtp(["", "", "", "", "", ""]);
+                  setOtp(["", "", "", ""]);
                   setMessage("");
                   setError(false);
                 }}

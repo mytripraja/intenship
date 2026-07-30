@@ -41,7 +41,14 @@ export async function POST(request: Request) {
           `https://cpaas.messagecentral.com/verification/v3/send?countryCode=91&flowType=SMS&mobileNumber=${cleanPhone}`,
           {
             method: "POST",
-            headers: { authToken: tokenData.token, accept: "*/*" },
+            headers: {
+              authToken: tokenData.token,
+              accept: "*/*",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              otpLength: 6,
+            }),
           }
         );
 

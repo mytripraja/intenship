@@ -40,18 +40,23 @@ export async function POST(req: Request) {
       if (!mcCustomerId || !mcPassword)
         throw new Error("Message Central credentials not set");
 
-      const mcPasswordBase64 = Buffer.from(mcPassword).toString("base64");
-
       const tokenRes = await fetch(
-        `https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=${mcCustomerId}&key=${mcPasswordBase64}&scope=NEW&country=91`
+        `https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=${mcCustomerId}&key=${mcPassword}&scope=NEW&country=91`,
+        { method: "GET", headers: { accept: "*/*" } }
       );
       const tokenData = await tokenRes.json();
+
+      if (!tokenData.token) {
+        throw new Error(
+          `Token generation failed: ${JSON.stringify(tokenData)}`
+        );
+      }
 
       const mcVerifyRes = await fetch(
         `https://cpaas.messagecentral.com/verification/v3/validateOtp?countryCode=91&mobileNumber=${cleanPhone}&verificationId=${verificationId}&customerId=${mcCustomerId}&code=${otp}`,
         {
           method: "GET",
-          headers: { authToken: tokenData.token },
+          headers: { authToken: tokenData.token, accept: "*/*" },
         }
       );
 
